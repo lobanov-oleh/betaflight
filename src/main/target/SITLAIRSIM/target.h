@@ -27,7 +27,7 @@
 
 #include "common/utils.h"
 
-#define TARGET_BOARD_IDENTIFIER "SITL"
+#define TARGET_BOARD_IDENTIFIER "SITLAIRSIM"
 
 #define SIMULATOR_MULTITHREAD
 
@@ -235,8 +235,8 @@ typedef struct
 #define UART7 ((USART_TypeDef *)0x0007)
 #define UART8 ((USART_TypeDef *)0x0008)
 
-#define SIMULATOR_MAX_RC_CHANNELS   16
-#define SIMULATOR_MAX_PWM_CHANNELS  16
+#define SIMULATOR_MAX_RC_CHANNELS   8 // 8 seems more than enough
+#define SIMULATOR_MAX_PWM_CHANNELS  4 // for now basic quadcopter
 
 typedef struct
 {
@@ -268,7 +268,7 @@ typedef struct {
 } rc_packet;
 
 typedef struct {
-    float motor_speed[4];   // normal: [0.0, 1.0], 3D: [-1.0, 1.0]
+    uint16_t motor_speed[SIMULATOR_MAX_PWM_CHANNELS]; // normal: [0.0, 1.0], 3D: [-1.0, 1.0]
 } servo_packet;
 
 typedef struct {

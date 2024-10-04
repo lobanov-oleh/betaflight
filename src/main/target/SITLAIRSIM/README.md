@@ -1,43 +1,91 @@
-## SITL in gazebo 8 with ArduCopterPlugin
-SITL (software in the loop) simulator allows you to run betaflight/cleanflight without any hardware.
-Currently only tested on Ubuntu 16.04, x86_64, gcc (Ubuntu 5.4.0-6ubuntu1~16.04.4) 5.4.0 20160609.
+## SITL in AirSim
 
-### install gazebo 8
-see here: [Installation](http://gazebosim.org/tutorials?cat=install)
+SITL (software in the loop) simulator allows you to run betaflight without any hardware.
 
-### copy & modify world
-for Ubunutu 16.04:
-`cp /usr/share/gazebo-8/worlds/iris_arducopter_demo.world .`
+Environment: Ubuntu 22.04, UnrealEngine 4.27, AirSim 1.8.1
 
-change `real_time_update_rate` in `iris_arducopter_demo.world`:
-`<real_time_update_rate>0</real_time_update_rate>`
-to
-`<real_time_update_rate>100</real_time_update_rate>`
-***this suggest set to non-zero***
+### Install AirSim
 
-`100` mean what speed your computer should run in (Hz).
-Faster computer can set to a higher rate.
-see [here](http://gazebosim.org/tutorials?tut=modifying_world&cat=build_world#PhysicsProperties) for detail.
-`max_step_size` should NOT higher than `0.0025` as I tested.
-smaller mean more accurate, but need higher speed CPU to run as realtime.
+1. Setup Conda:
+```sh
+cd /tmp
 
-### build betaflight
-run `make TARGET=SITL`
+curl -O https://repo.anaconda.com/archive/Anaconda3-2020.11-Linux-x86_64.sh
 
-### settings
-to avoid simulation speed slow down, suggest to set some settings belows:
+chmod +x Anaconda3-2020.11-Linux-x86_64.sh
+bash Anaconda3-2020.11-Linux-x86_64.sh
+
+source ~/.bashrc
+
+conda -V
+
+conda update conda  
+conda update anaconda
+```
+2. Create and activate conda's env:
+```sh
+conda create -n airsim
+conda env list
+conda activate airsim
+```
+3. Install UnrealEngine:
+```sh
+git clone -b 4.27 git@github.com:EpicGames/UnrealEngine.git
+cd UnrealEngine
+
+git clean -dfX
+
+./Setup.sh
+./GenerateProjectFiles.sh
+make
+```
+4. Install AirSim:
+```sh
+git clone git@github.com:lobanov-oleh/AirSim.git
+cd AirSim
+./setup.sh
+./build.sh
+
+sudo apt install python3-pip
+
+pip install numpy
+pip install msgpack-rpc-python
+pip install airsim
+```
+5. Download and unpack AirSim environment: https://github.com/microsoft/AirSim/releases/tag/v1.8.1 (I use Blocks)
+
+### Build betaflight firmware for AirSim
+
+```sh
+make TARGET=SITLAIRSIM
+```
+
+### Settings
+
+To avoid simulation speed slow down, suggest to set some settings belows:
 
 In `configuration` page:
 
 1. `ESC/Motor`: `PWM`, disable `Motor PWM speed Sparted from PID speed`
 2. `PID loop frequency` as high as it can.
 
-### start and run
-1. start betaflight: `./obj/main/betaflight_SITL.elf`
-2. start gazebo: `gazebo --verbose ./iris_arducopter_demo.world`
+### Start and run
+
+1. start betaflight:
+```sh
+./obj/main/betaflight_SITLAIRSIM.elf
+```
+2. start airsim:
+```sh
+conda activate airsim
+
+cd LinuxBlocks1.8.1/LinuxNoEditor
+chmod +x Blocks.sh
+./Blocks.sh -ResX=640 -ResY=480 -windowed
+```
 4. connect your transmitter and fly/test, I used a app to send `MSP_SET_RAW_RC`, code available [here](https://github.com/cs8425/msp-controller).
 
-### note
+### Notes (draft)
 betaflight	->	gazebo	`udp://127.0.0.1:9002`
 gazebo	->	betaflight	`udp://127.0.0.1:9003`
 

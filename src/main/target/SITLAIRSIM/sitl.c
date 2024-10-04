@@ -56,7 +56,7 @@
 #include "rx/rx.h"
 
 #include "dyad.h"
-#include "target/SITL/udplink.h"
+#include "target/SITLAIRSIM/udplink.h"
 
 uint32_t SystemCoreClock;
 
@@ -77,6 +77,8 @@ static pthread_mutex_t updateLock;
 static pthread_mutex_t mainLoopLock;
 static char simulator_ip[32] = "127.0.0.1";
 
+static char simulator_name[] = "AirSim";
+
 #define PORT_PWM_RAW    9001    // Out
 #define PORT_PWM        9002    // Out
 #define PORT_STATE      9003    // In
@@ -89,8 +91,8 @@ int targetParseArgs(int argc, char * argv[])
         strcpy(simulator_ip, argv[1]);
     }
 
-    printf("[SITL] The SITL will output to IP %s:%d (Gazebo) and %s:%d (RealFlightBridge)\n",
-           simulator_ip, PORT_PWM, simulator_ip, PORT_PWM_RAW);
+    printf("[SITL] The SITL for %s will output to IP %s:%d\n",
+           simulator_name, simulator_ip, PORT_PWM);
     return 0;
 }
 
@@ -287,31 +289,31 @@ void systemInit(void)
     int ret;
 
     clock_gettime(CLOCK_MONOTONIC, &start_time);
-    printf("[system]Init...\n");
+    printf("[SITL] [system]Init...\n");
 
     SystemCoreClock = 500 * 1e6; // virtual 500MHz
 
     if (pthread_mutex_init(&updateLock, NULL) != 0) {
-        printf("Create updateLock error!\n");
+        printf("[SITL] Create updateLock error!\n");
         exit(1);
     }
 
     if (pthread_mutex_init(&mainLoopLock, NULL) != 0) {
-        printf("Create mainLoopLock error!\n");
+        printf("[SITL] Create mainLoopLock error!\n");
         exit(1);
     }
 
     ret = pthread_create(&tcpWorker, NULL, tcpThread, NULL);
     if (ret != 0) {
-        printf("Create tcpWorker error!\n");
+        printf("[SITL] Create tcpWorker error!\n");
         exit(1);
     }
 
     ret = udpInit(&pwmLink, simulator_ip, PORT_PWM, false);
-    printf("[SITL] init PwmOut UDP link to gazebo %s:%d...%d\n", simulator_ip, PORT_PWM, ret);
+    printf("[SITL] init PwmOut UDP link to %s %s:%d...%d\n", simulator_name, simulator_ip, PORT_PWM, ret);
 
     ret = udpInit(&pwmRawLink, simulator_ip, PORT_PWM_RAW, false);
-    printf("[SITL] init PwmOut UDP link to RF9 %s:%d...%d\n", simulator_ip, PORT_PWM_RAW, ret);
+    printf("[SITL] init PwmRawOut UDP link to %s %s:%d...%d\n", simulator_name, simulator_ip, PORT_PWM_RAW, ret);
 
     ret = udpInit(&stateLink, NULL, PORT_STATE, true);
     printf("[SITL] start UDP server @%d...%d\n", PORT_STATE, ret);
@@ -321,20 +323,20 @@ void systemInit(void)
 
     ret = pthread_create(&udpWorker, NULL, udpThread, NULL);
     if (ret != 0) {
-        printf("Create udpWorker error!\n");
+        printf("[SITL] Create udpWorker error!\n");
         exit(1);
     }
 
     ret = pthread_create(&udpWorkerRC, NULL, udpRCThread, NULL);
     if (ret != 0) {
-        printf("Create udpRCThread error!\n");
+        printf("[SITL] Create udpRCThread error!\n");
         exit(1);
     }
 }
 
 void systemReset(void)
 {
-    printf("[system]Reset!\n");
+    printf("[SITL] [system]Reset!\n");
     workerRunning = false;
     pthread_join(tcpWorker, NULL);
     pthread_join(udpWorker, NULL);
@@ -344,7 +346,7 @@ void systemResetToBootloader(bootloaderRequestType_e requestType)
 {
     UNUSED(requestType);
 
-    printf("[system]ResetToBootloader!\n");
+    printf("[SITL] [system]ResetToBootloader!\n");
     workerRunning = false;
     pthread_join(tcpWorker, NULL);
     pthread_join(udpWorker, NULL);
@@ -353,12 +355,12 @@ void systemResetToBootloader(bootloaderRequestType_e requestType)
 
 void timerInit(void)
 {
-    printf("[timer]Init...\n");
+    printf("[SITL] [timer]Init...\n");
 }
 
 void failureMode(failureMode_e mode)
 {
-    printf("[failureMode]!!! %d\n", mode);
+    printf("[SITL] [failureMode]!!! %d\n", mode);
     while (1);
 }
 
@@ -582,23 +584,28 @@ bool pwmIsMotorEnabled(uint8_t index)
 static void pwmCompleteMotorUpdate(void)
 {
     // send to simulator
-    // for gazebo8 ArduCopterPlugin remap, normal range = [0.0, 1.0], 3D rang = [-1.0, 1.0]
+    // for airsim, (0,1) mapping is done in BetaflightApi.hpp. So just send raw pwm
+    pwmPkt.motor_speed[3] = motorsPwm[0] + idlePulse;
+    pwmPkt.motor_speed[0] = motorsPwm[1] + idlePulse;
+    pwmPkt.motor_speed[1] = motorsPwm[2] + idlePulse;
+    pwmPkt.motor_speed[2] = motorsPwm[3] + idlePulse;
 
-    double outScale = 1000.0;
-    if (featureIsEnabled(FEATURE_3D)) {
-        outScale = 500.0;
-    }
-
-    pwmPkt.motor_speed[3] = motorsPwm[0] / outScale;
-    pwmPkt.motor_speed[0] = motorsPwm[1] / outScale;
-    pwmPkt.motor_speed[1] = motorsPwm[2] / outScale;
-    pwmPkt.motor_speed[2] = motorsPwm[3] / outScale;
+    // printf("motor raw pwm: ");
+    // for (int i=0; i<4; i++){
+    //     printf(" %f ", pwmPkt.motor_speed[i]);
+    // }
+    // printf("[pwm sent to airsim] %d,%d,%d,%d \n", pwmPkt.motor_speed[3], pwmPkt.motor_speed[0],pwmPkt.motor_speed[1], pwmPkt.motor_speed[2]);
 
     // get one "fdm_packet" can only send one "servo_packet"!!
     if (pthread_mutex_trylock(&updateLock) != 0) return;
     udpSend(&pwmLink, &pwmPkt, sizeof(servo_packet));
 //    printf("[pwm]%u:%u,%u,%u,%u\n", idlePulse, motorsPwm[0], motorsPwm[1], motorsPwm[2], motorsPwm[3]);
     udpSend(&pwmRawLink, &pwmRawPkt, sizeof(servo_packet_raw));
+
+    // fflush(stdout);
+    // printf("[pwm sent to airsim]%f,%f,%f,%f\n", pwmPkt.motor_speed[3], pwmPkt.motor_speed[0],pwmPkt.motor_speed[1],pwmPkt.motor_speed[2]);
+    // printf("[pwm normalised by airsim to airsim] %f,%f,%f,%f\n", idlePulse, pwmRawPkt.pwm_output_raw[0]);
+        // pwmRawPkt.pwm_output_raw[1], pwmRawPkt.pwm_output_raw[2], pwmRawPkt.pwm_output_raw[3]);
 }
 
 void pwmWriteServo(uint8_t index, float value)
